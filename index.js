@@ -21,9 +21,49 @@ const client = new MongoClient(uri, {
 
 const database = client.db("blood_bridge");
 const donationRequests = database.collection("donation_requests");
+const users = database.collection("user");
 
 app.get("/", (req, res) => {
   res.send("Hello World");
+});
+app.get("/api/donors", async (req, res) => {
+  try {
+    const donors = await users
+      .find(
+        { role: "donor" },
+        {
+          projection: {
+            name: 1,
+            email: 1,
+            image: 1,
+            bloodGroup: 1,
+            district: 1,
+            districtId: 1,
+            districtName: 1,
+            districtBnName: 1,
+            upazila: 1,
+            upazilaId: 1,
+            upazilaName: 1,
+            role: 1,
+            status: 1
+          }
+        }
+      )
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.status(200).json({
+      success: true,
+      data: donors
+    });
+  } catch (error) {
+    console.error("Failed to fetch donors:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch donors"
+    });
+  }
 });
 
 app.post("/api/donation-requests", async (req, res) => {
