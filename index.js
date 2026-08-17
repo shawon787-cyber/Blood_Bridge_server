@@ -65,6 +65,68 @@ app.get("/api/donors", async (req, res) => {
     });
   }
 });
+app.get("/api/admin/users", async (req, res) => {
+  try {
+    const usersData = await users
+      .find(
+        {},
+        {
+          projection: {
+            name: 1,
+            email: 1,
+            image: 1,
+            bloodGroup: 1,
+            district: 1,
+            upazila: 1,
+            role: 1,
+            status: 1,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        }
+      )
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    const formattedUsers = usersData.map((user) => ({
+      id: user._id.toString(),
+      name: user.name,
+      email: user.email,
+      image: user.image || "",
+      bloodGroup: user.bloodGroup || "N/A",
+      location: `${user.upazila || ""}, ${user.district || ""}`,
+      role:
+        user.role === "donor"
+          ? "Donor"
+          : user.role === "volunteer"
+          ? "Volunteer"
+          : user.role === "administrator"
+          ? "Administrator"
+          : user.role,
+      status:
+        user.status === "active"
+          ? "Active"
+          : user.status === "inactive"
+          ? "Inactive"
+          : user.status === "suspended"
+          ? "Suspended"
+          : user.status,
+      joined: user.createdAt,
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: formattedUsers,
+    });
+  } catch (error) {
+    console.error("Failed to fetch users:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch users",
+    });
+  }
+});
 
 app.post("/api/donation-requests", async (req, res) => {
   try {
