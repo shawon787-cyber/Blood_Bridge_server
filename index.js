@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId, } = require("mongodb");
 require("dotenv").config();
 
 const app = express();
@@ -63,6 +63,44 @@ app.get("/api/donation-requests", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch donation requests",
+    });
+  }
+});
+app.get("/api/donation-requests/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Validate MongoDB ObjectId
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid donation request ID",
+      });
+    }
+
+    const request = await donationRequests.findOne({
+      _id: new ObjectId(id),
+    });
+
+    // Request not found
+    if (!request) {
+      return res.status(404).json({
+        success: false,
+        message: "Donation request not found",
+      });
+    }
+
+    // Successfully found
+    res.status(200).json({
+      success: true,
+      data: request,
+    });
+  } catch (error) {
+    console.error("Failed to fetch donation request:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch donation request",
     });
   }
 });
