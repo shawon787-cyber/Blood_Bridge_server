@@ -127,6 +127,121 @@ app.get("/api/admin/users", async (req, res) => {
     });
   }
 });
+app.get("/api/user/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    const user = await users.findOne({
+      _id: new ObjectId(id),
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: user,
+    });
+  } catch (error) {
+    console.error("Failed to fetch user:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch user",
+    });
+  }
+});
+app.patch("/api/users/:id/profile", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    const allowedFields = [
+      "name",
+      "image",
+      "phone",
+      "bloodGroup",
+      "district",
+      "districtId",
+      "districtName",
+      "districtBnName",
+      "upazila",
+      "upazilaId",
+      "upazilaName",
+    ];
+
+    const updateData = {
+      updatedAt: new Date(),
+    };
+
+    allowedFields.forEach((field) => {
+      if (
+        req.body[field] !== undefined &&
+        req.body[field] !== null
+      ) {
+        updateData[field] = req.body[field];
+      }
+    });
+
+    // No actual profile field provided
+    if (Object.keys(updateData).length === 1) {
+      return res.status(400).json({
+        success: false,
+        message: "No valid fields provided for update",
+      });
+    }
+
+    const result = await users.updateOne(
+      {
+        _id: new ObjectId(id),
+      },
+      {
+        $set: updateData,
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const updatedUser = await users.findOne({
+      _id: new ObjectId(id),
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+      data: updatedUser,
+    });
+  } catch (error) {
+    console.error("Failed to update profile:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update profile",
+    });
+  }
+});
 
 app.post("/api/donation-requests", async (req, res) => {
   try {
