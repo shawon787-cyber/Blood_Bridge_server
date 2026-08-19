@@ -1,11 +1,25 @@
 const express = require("express");
 const cors = require("cors");
+const multer = require("multer");
 const { MongoClient, ServerApiVersion, ObjectId, } = require("mongodb");
 require("dotenv").config();
 
 const app = express();
 const PORT = 5000;
 
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only image files are allowed"));
+    }
+  },
+});
 app.use(cors());
 app.use(express.json());
 
@@ -319,6 +333,146 @@ app.get("/api/donation-requests/:id", async (req, res) => {
       success: false,
       message: "Failed to fetch donation request",
     });
+  }
+});
+// ============================================================
+// PROFILE IMAGE UPLOAD API
+// ============================================================
+
+app.post(
+  "/api/users/:id/profile-image",
+  upload.single("image"),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid user ID",
+        });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: "No image file uploaded",
+        });
+      }
+
+      // Check user exists
+      const user = await users.findOne({
+        _id: new ObjectId(id),
+      });
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+
+      // Save image into MongoDB
+      const result = await users.updateOne(
+        {
+          _id: new ObjectId(id),
+        },
+        {
+          $set: {
+  profileImage: req.file.buffer,
+  profileImageContentType: req.file.mimetype,
+  profileImageName: req.file.originalname,
+  profileImageSize: req.file.size,
+
+  // Save the profile image API URL
+  image: `http://localhost:5000/api/users/${id}/profile-image`,
+
+  updatedAt: new Date(),
+}
+        }
+      );
+
+      if (result.matchedCount === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Profile image uploaded successfully",
+        imageUrl: `http://localhost:5000/api/users/${id}/profile-image`,
+      });
+    } catch (error) {
+      console.error("Profile image upload error:", error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to upload profile image",
+      });
+    }
+  }
+);
+
+
+// ============================================================
+// GET PROFILE IMAGE API
+// ============================================================
+
+app.get("/api/users/:id/profile-image", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send("Invalid user ID");
+    }
+
+    const user = await users.findOne(
+      {
+        _id: new ObjectId(id),
+      },
+      {
+        projection: {
+          profileImage: 1,
+          profileImageContentType: 1,
+        },
+      }
+    );
+
+    if (!user || !user.profileImage) {
+      return res.status(404).send("Profile image not found");
+    }
+
+    const contentType =
+      user.profileImageContentType || "application/octet-stream";
+
+    // MongoDB BSON Binary -> Node.js Buffer
+    let imageBuffer;
+
+    if (Buffer.isBuffer(user.profileImage)) {
+      imageBuffer = user.profileImage;
+    } else if (user.profileImage.buffer) {
+      imageBuffer = user.profileImage.buffer;
+    } else if (typeof user.profileImage.value === "function") {
+      imageBuffer = user.profileImage.value();
+    } else {
+      imageBuffer = Buffer.from(user.profileImage);
+    }
+
+    res.set({
+      "Content-Type": contentType,
+      "Content-Length": imageBuffer.length,
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+      Pragma: "no-cache",
+      Expires: "0",
+    });
+
+    return res.end(imageBuffer);
+  } catch (error) {
+    console.error("Failed to fetch profile image:", error);
+
+    return res.status(500).send("Failed to fetch profile image");
   }
 });
 
