@@ -120,10 +120,8 @@ app.get("/api/admin/users", async (req, res) => {
       status:
         user.status === "active"
           ? "Active"
-          : user.status === "inactive"
-          ? "Inactive"
-          : user.status === "suspended"
-          ? "Suspended"
+          : user.status === "blocked"
+          ? "Blocked"
           : user.status,
       joined: user.createdAt,
     }));
@@ -332,6 +330,220 @@ app.get("/api/donation-requests/:id", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch donation request",
+    });
+  }
+});
+// ============================================================
+// BLOCK USER
+// ============================================================
+
+app.patch("/api/admin/users/:id/block", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    const user = await users.findOne({
+      _id: new ObjectId(id),
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (user.status === "blocked") {
+      return res.status(400).json({
+        success: false,
+        message: "User is already blocked",
+      });
+    }
+
+    const result = await users.updateOne(
+      {
+        _id: new ObjectId(id),
+      },
+      {
+        $set: {
+          status: "blocked",
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    if (result.modifiedCount === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Failed to block user",
+      });
+    }
+
+    const updatedUser = await users.findOne({
+      _id: new ObjectId(id),
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "User blocked successfully",
+      data: updatedUser,
+    });
+  } catch (error) {
+    console.error("Failed to block user:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to block user",
+    });
+  }
+});
+// ============================================================
+// UNBLOCK USER
+// ============================================================
+
+app.patch("/api/admin/users/:id/unblock", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    const user = await users.findOne({
+      _id: new ObjectId(id),
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (user.status === "active") {
+      return res.status(400).json({
+        success: false,
+        message: "User is already active",
+      });
+    }
+
+    const result = await users.updateOne(
+      {
+        _id: new ObjectId(id),
+      },
+      {
+        $set: {
+          status: "active",
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    if (result.modifiedCount === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Failed to unblock user",
+      });
+    }
+
+    const updatedUser = await users.findOne({
+      _id: new ObjectId(id),
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "User unblocked successfully",
+      data: updatedUser,
+    });
+  } catch (error) {
+    console.error("Failed to unblock user:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to unblock user",
+    });
+  }
+});
+
+// ============================================================
+// TOGGLE DONOR / VOLUNTEER ROLE
+// ============================================================
+
+app.patch("/api/admin/users/:id/toggle-role", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    const user = await users.findOne({
+      _id: new ObjectId(id),
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Only donor <-> volunteer can be switched
+    if (user.role !== "donor" && user.role !== "volunteer") {
+      return res.status(400).json({
+        success: false,
+        message: "Only donor and volunteer roles can be switched",
+      });
+    }
+
+    const newRole = user.role === "donor" ? "volunteer" : "donor";
+
+    const result = await users.updateOne(
+      {
+        _id: new ObjectId(id),
+      },
+      {
+        $set: {
+          role: newRole,
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    if (result.modifiedCount === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Failed to change user role",
+      });
+    }
+
+    const updatedUser = await users.findOne({
+      _id: new ObjectId(id),
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `User role changed from ${user.role} to ${newRole}`,
+      data: updatedUser,
+    });
+  } catch (error) {
+    console.error("Failed to toggle user role:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to change user role",
     });
   }
 });
