@@ -255,13 +255,38 @@ app.patch("/api/users/:id/profile", async (req, res) => {
   }
 });
 
+// app.post("/api/donation-requests", async (req, res) => {
+//   try {
+//     const donationRequest = req.body;
+
+//     const result = await donationRequests.insertOne(donationRequest);
+
+//     res.status(201).send({
+//       success: true,
+//       message: "Donation request created successfully",
+//       insertedId: result.insertedId,
+//     });
+//   } catch (error) {
+//     console.error("Failed to create donation request:", error);
+
+//     res.status(500).send({
+//       success: false,
+//       message: "Failed to create donation request",
+//     });
+//   }
+// });
 app.post("/api/donation-requests", async (req, res) => {
   try {
-    const donationRequest = req.body;
+    const donationRequest = {
+      ...req.body,
+      status: "Pending",
+      createdAt: req.body.createdAt || new Date(),
+      updatedAt: new Date(),
+    };
 
     const result = await donationRequests.insertOne(donationRequest);
 
-    res.status(201).send({
+    res.status(201).json({
       success: true,
       message: "Donation request created successfully",
       insertedId: result.insertedId,
@@ -269,7 +294,7 @@ app.post("/api/donation-requests", async (req, res) => {
   } catch (error) {
     console.error("Failed to create donation request:", error);
 
-    res.status(500).send({
+    res.status(500).json({
       success: false,
       message: "Failed to create donation request",
     });
@@ -292,6 +317,52 @@ app.get("/api/donation-requests", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch donation requests",
+    });
+  }
+});
+// ============================================================
+// DONATION REQUEST STATISTICS
+// ============================================================
+
+app.get("/api/donation-requests/stats", async (req, res) => {
+  try {
+    const total = await donationRequests.countDocuments();
+
+    const pending = await donationRequests.countDocuments({
+      status: "Pending",
+    });
+
+    const inProgress = await donationRequests.countDocuments({
+      status: "inprogress",
+    });
+
+    const done = await donationRequests.countDocuments({
+      status: "done",
+    });
+
+    const cancelled = await donationRequests.countDocuments({
+      status: "cancelled",
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        total,
+        pending,
+        inProgress,
+        done,
+        cancelled,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Failed to fetch donation request statistics:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch donation request statistics",
     });
   }
 });
@@ -544,6 +615,189 @@ app.patch("/api/admin/users/:id/toggle-role", async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to change user role",
+    });
+  }
+});
+
+// ============================================================
+// UPDATE DONATION REQUEST STATUS
+// ============================================================
+
+app.patch("/api/donation-requests/:id/status", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    // ----------------------------------------------------------
+    // Validate ID
+    // ----------------------------------------------------------
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid donation request ID",
+      });
+    }
+
+    // ----------------------------------------------------------
+    // Normalize incoming status
+    // ----------------------------------------------------------
+
+    const normalizedStatus = String(status || "")
+      .toLowerCase()
+      .replace(/\s+/g, "");
+
+    const statusMap = {
+      pending: "Pending",
+      inprogress: "inprogress",
+      "in-progress": "inprogress",
+      done: "done",
+      completed: "done",
+      cancelled: "cancelled",
+      canceled: "cancelled",
+    };
+
+    const nextStatus = statusMap[normalizedStatus];
+
+    if (!nextStatus) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status",
+      });
+    }
+
+    // ----------------------------------------------------------
+    // Find donation request
+    // ----------------------------------------------------------
+
+    const request = await donationRequests.findOne({
+      _id: new ObjectId(id),
+    });
+
+    if (!request) {
+      return res.status(404).json({
+        success: false,
+        message: "Donation request not found",
+      });
+    }
+
+    // ----------------------------------------------------------
+    // Normalize current status
+    // ----------------------------------------------------------
+
+    const currentStatus = String(request.status || "Pending")
+      .toLowerCase()
+      .replace(/\s+/g, "");
+
+    // ----------------------------------------------------------
+    // Allowed workflow
+    // ----------------------------------------------------------
+
+    const allowedTransitions = {
+      pending: ["inprogress"],
+      inprogress: ["done", "cancelled"],
+      done: [],
+      cancelled: [],
+    };
+
+    if (!allowedTransitions[currentStatus]) {
+      return res.status(400).json({
+        success: false,
+        message: `Unknown current status: ${request.status}`,
+      });
+    }
+
+    if (!allowedTransitions[currentStatus].includes(nextStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot change status from ${currentStatus} to ${nextStatus}`,
+      });
+    }
+
+    // ----------------------------------------------------------
+    // Update donation request
+    // ----------------------------------------------------------
+
+    const updateData = {
+      status: nextStatus,
+      updatedAt: new Date(),
+    };
+
+    if (nextStatus === "done") {
+      updateData.completedAt = new Date();
+    }
+
+    if (nextStatus === "cancelled") {
+      updateData.cancelledAt = new Date();
+    }
+
+    const result = await donationRequests.updateOne(
+      {
+        _id: new ObjectId(id),
+      },
+      {
+        $set: updateData,
+      }
+    );
+
+    if (result.modifiedCount === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Failed to update donation request status",
+      });
+    }
+
+    // ----------------------------------------------------------
+    // Update related user status if user ID exists
+    // ----------------------------------------------------------
+
+    const relatedUserId =
+      request.userId ||
+      request.requesterId ||
+      request.donorId ||
+      request.createdBy;
+
+    if (relatedUserId && ObjectId.isValid(relatedUserId)) {
+      await users.updateOne(
+        {
+          _id: new ObjectId(relatedUserId),
+        },
+        {
+          $set: {
+            donationRequestStatus: nextStatus,
+            updatedAt: new Date(),
+          },
+        }
+      );
+    }
+
+    // ----------------------------------------------------------
+    // Get updated request
+    // ----------------------------------------------------------
+
+    const updatedRequest = await donationRequests.findOne({
+      _id: new ObjectId(id),
+    });
+
+    // ----------------------------------------------------------
+    // Response
+    // ----------------------------------------------------------
+
+    return res.status(200).json({
+      success: true,
+      message: `Request status changed from ${currentStatus} to ${nextStatus}`,
+      data: updatedRequest,
+    });
+
+  } catch (error) {
+    console.error(
+      "Failed to update donation request status:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update donation request status",
     });
   }
 });
