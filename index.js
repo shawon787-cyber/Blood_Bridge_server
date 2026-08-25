@@ -255,13 +255,19 @@ app.patch("/api/users/:id/profile", async (req, res) => {
   }
 });
 
+
 // app.post("/api/donation-requests", async (req, res) => {
 //   try {
-//     const donationRequest = req.body;
+//     const donationRequest = {
+//       ...req.body,
+//       status: "Pending",
+//       createdAt: req.body.createdAt || new Date(),
+//       updatedAt: new Date(),
+//     };
 
 //     const result = await donationRequests.insertOne(donationRequest);
 
-//     res.status(201).send({
+//     res.status(201).json({
 //       success: true,
 //       message: "Donation request created successfully",
 //       insertedId: result.insertedId,
@@ -269,24 +275,87 @@ app.patch("/api/users/:id/profile", async (req, res) => {
 //   } catch (error) {
 //     console.error("Failed to create donation request:", error);
 
-//     res.status(500).send({
+//     res.status(500).json({
 //       success: false,
 //       message: "Failed to create donation request",
 //     });
 //   }
 // });
+// ============================================================
+// CREATE DONATION REQUEST
+// BLOCKED USERS CANNOT CREATE DONATION REQUEST
+// ============================================================
+
 app.post("/api/donation-requests", async (req, res) => {
   try {
+    const { userId } = req.body;
+
+    // ----------------------------------------------------------
+    // Validate userId
+    // ----------------------------------------------------------
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    if (!ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    // ----------------------------------------------------------
+    // Find user
+    // ----------------------------------------------------------
+
+    const user = await users.findOne({
+      _id: new ObjectId(userId),
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // ----------------------------------------------------------
+    // BLOCKED USER CHECK
+    // ----------------------------------------------------------
+
+    if (user.status === "blocked") {
+      return res.status(403).json({
+        success: false,
+        blocked: true,
+        message:
+          "Your account is blocked. You cannot create a donation request.",
+      });
+    }
+
+    // ----------------------------------------------------------
+    // CREATE DONATION REQUEST
+    // ----------------------------------------------------------
+
     const donationRequest = {
       ...req.body,
+
+      // Make sure user ID is stored with the request
+      userId: user._id.toString(),
+
       status: "Pending",
+
       createdAt: req.body.createdAt || new Date(),
+
       updatedAt: new Date(),
     };
 
     const result = await donationRequests.insertOne(donationRequest);
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: "Donation request created successfully",
       insertedId: result.insertedId,
@@ -294,12 +363,13 @@ app.post("/api/donation-requests", async (req, res) => {
   } catch (error) {
     console.error("Failed to create donation request:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to create donation request",
     });
   }
 });
+
 app.get("/api/donation-requests", async (req, res) => {
   try {
     const result = await donationRequests
@@ -320,6 +390,75 @@ app.get("/api/donation-requests", async (req, res) => {
     });
   }
 });
+// ============================================================
+// GET COMPLETED DONATION HISTORY
+// ============================================================
+
+app.get("/api/donation-history", async (req, res) => {
+  try {
+    const history = await donationRequests
+      .find({
+        status: "done",
+      })
+      .sort({
+        completedAt: -1,
+        createdAt: -1,
+      })
+      .limit(4)
+      .toArray();
+
+    return res.status(200).json({
+      success: true,
+      data: history,
+    });
+  } catch (error) {
+    console.error("Failed to fetch donation history:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch donation history",
+    });
+  }
+});
+app.get("/api/donation-count/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    if (!ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    const totalDonations = await donationRequests.countDocuments({
+      userId: userId,
+      status: "done",
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalDonations,
+      },
+    });
+  } catch (error) {
+    console.error("Failed to fetch donation count:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch donation count",
+    });
+  }
+});
+
 // ============================================================
 // DONATION REQUEST STATISTICS
 // ============================================================
