@@ -23,6 +23,7 @@ app.use(express.json());
 const { users, donationRequests, funding, ObjectId } = db;
 
 const ALLOWED_STATUSES = ["pending", "inprogress", "done", "canceled"];
+const ALLOWED_URGENCY_LEVELS = ["Urgent", "High", "Medium", "Low"];
 
 function normalizeStatus(value) {
   if (value === undefined || value === null) return null;
@@ -576,6 +577,10 @@ app.post(
         district,
         upazila,
         contactNumber,
+        phoneNumber,
+        address,
+        message,
+        urgency,
       } = req.body;
 
       if (!recipientName || !hospitalName || !bloodGroup) {
@@ -586,16 +591,21 @@ app.post(
         });
       }
 
+      const selectedUrgency = ALLOWED_URGENCY_LEVELS.includes(urgency)
+        ? urgency
+        : "Urgent";
+
       const donationRequest = {
         recipientName,
         hospitalName,
-        fullAddress: fullAddress || "",
+        fullAddress: fullAddress || address || "",
         bloodGroup,
         donationDate: donationDate || null,
-        requestMessage: requestMessage || "",
+        requestMessage: requestMessage || message || "",
         district: district || dbUser.district || "",
         upazila: upazila || dbUser.upazila || "",
-        contactNumber: contactNumber || "",
+        contactNumber: contactNumber || phoneNumber || "",
+        urgency: selectedUrgency,
 
         requesterId,
         requesterEmail,
@@ -929,7 +939,18 @@ app.patch("/api/donation-requests/:id/update", verifyToken, async (req, res) => 
       "district",
       "upazila",
       "contactNumber",
+      "urgency",
     ];
+
+    if (
+      req.body.urgency !== undefined &&
+      !ALLOWED_URGENCY_LEVELS.includes(req.body.urgency)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid urgency level",
+      });
+    }
 
     const updateData = { updatedAt: new Date() };
     editableFields.forEach((field) => {
