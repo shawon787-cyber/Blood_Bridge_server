@@ -31,7 +31,21 @@ function normalizeStatus(value) {
 }
 
 app.get("/", (req, res) => {
-  res.send("Hello World");
+  res.status(200).send("BloodBridge API is running");
+});
+
+app.use(async (req, res, next) => {
+  try {
+    await db.initializeDatabase();
+    return next();
+  } catch (error) {
+    console.error("MongoDB initialization failed:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Database connection failed",
+    });
+  }
 });
 
 // ============================================================
@@ -1813,29 +1827,12 @@ app.use((error, req, res, next) => {
   });
 });
 
-async function run() {
-  try {
-    await db.client.connect();
-
-    await db.client.db("admin").command({ ping: 1 });
-
-    await funding.createIndex(
-      { stripeSessionId: 1 },
-      { unique: true, sparse: true, name: "funding_stripe_session_id_unique" }
-    );
-
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
-  } catch (error) {
-    console.error("MongoDB connection failed:", error);
-  }
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+  });
 }
 
-run();
-
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+module.exports = app;
 
 // === APPEND_POINTS ===
